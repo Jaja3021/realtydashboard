@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard · Realty Dashboard</title>
+<link rel="stylesheet" href="/css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="layout">
+<script src="/js/sidebar.js"></script>
+<main class="main">
+
+<div class="page-header">
+  <div>
+    <h1>Dashboard</h1>
+    <p>Overview of sold properties and sales performance.</p>
+  </div>
+</div>
+
+<div id="statRow" class="stat-row">
+  <div class="loading">Loading…</div>
+</div>
+
+<div class="chart-grid">
+  <div class="card">
+    <h2>Revenue trend <span class="muted">· last 6 months</span></h2>
+    <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+  </div>
+  <div class="card">
+    <h2>Sales by property type <span class="muted">· all time</span></h2>
+    <div class="chart-wrap"><canvas id="typeChart"></canvas></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recently sold</h2>
+  <table>
+    <thead>
+      <tr><th>Property</th><th>Type</th><th>Agent</th><th>Date Sold</th><th class="num">Price</th></tr>
+    </thead>
+    <tbody id="recentBody">
+      <tr><td colspan="5" class="loading">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</main>
+</div>
+
+<script src="/js/utils.js"></script>
+<script>
+(async function () {
+  let dashboard;
+  try {
+    dashboard = await api('/api/dashboard');
+  } catch (e) {
+    document.getElementById('statRow').innerHTML = `<div class="alert alert-error">Failed to load dashboard: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+
+  const { monthStat, allStat, topAgent, trend, typeBreakdown, recent } = dashboard;
+  const monthLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  document.getElementById('statRow').innerHTML = `
+    <div class="stat-tile">
+      <div class="stat-tile__label">Units Sold This Month</div>
+      <div class="stat-tile__value">${monthStat.units}</div>
+      <div class="stat-tile__delta">${monthLabel}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile__label">Revenue This Month</div>
+      <div class="stat-tile__value">${peso(monthStat.revenue)}</div>
+      <div class="stat-tile__delta">${monthLabel}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile__label">Top Agent This Month</div>
+      <div class="stat-tile__value" style="font-size:20px;">${topAgent ? escapeHtml(topAgent.agent_name) : '—'}</div>
+      <div class="stat-tile__delta good">${topAgent ? peso(topAgent.revenue) + ' · ' + topAgent.units + ' units' : 'No sales yet'}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile__label">All-Time Units / Revenue</div>
+      <div class="stat-tile__value">${allStat.units}</div>
+      <div class="stat-tile__delta">${peso(allStat.revenue)}</div>
+    </div>
+  `;
+
+  const recentBody = document.getElementById('recentBody');
+  if (!recent.length) {
+    recentBody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted)">No sales recorded yet. <a href="/add-sale">Add one</a>.</td></tr>`;
+  } else {
+    recentBody.innerHTML = recent.map((r) => `
+      <tr>
+        <td>${escapeHtml(r.property_name)}</td>
+        <td><span class="badge">${escapeHtml(r.property_type)}</span></td>
+        <td>${escapeHtml(r.agent_name)}</td>
+        <td>${formatDate(r.date_sold)}</td>
+        <td class="num">${peso(r.price)}</td>
+      </tr>
+    `).join('');
+  }
+
+  const css = getComputedStyle(document.documentElement);
+  const seriesColor = css.getPropertyValue('--series-1').trim();
+  const gridColor = css.getPropertyValue('--gridline').trim();
+  const textMuted = css.getPropertyValue('--text-muted').trim();
+  const textSecondary = css.getPropertyValue('--text-secondary').trim();
+
+  Chart.defaults.font.family = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = textMuted;
+
+  function moneyTick(v) {
+    return '₱' + (v >= 1000000 ? (v / 1000000) + 'M' : v >= 1000 ? (v / 1000) + 'k' : v);
+  }
+
+  new Chart(document.getElementById('trendChart'), {
+    type: 'bar',
+    data: {
+      labels: trend.map((t) => t.label),
+      datasets: [{ label: 'Revenue', data: trend.map((t) => t.revenue), backgroundColor: seriesColor, borderRadius: 4, maxBarThickness: 40 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' ₱' + ctx.parsed.y.toLocaleString() } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: textSecondary } },
+        y: { grid: { color: gridColor }, border: { display: false }, ticks: { callback: moneyTick } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('typeChart'), {
+    type: 'bar',
+    data: {
+      labels: typeBreakdown.map((t) => t.property_type),
+      datasets: [{ label: 'Revenue', data: typeBreakdown.map((t) => t.revenue), backgroundColor: seriesColor, borderRadius: 4, maxBarThickness: 22 }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' ₱' + ctx.parsed.x.toLocaleString() } } },
+      scales: {
+        x: { grid: { color: gridColor }, border: { display: false }, ticks: { callback: moneyTick } },
+        y: { grid: { display: false }, ticks: { color: textSecondary } }
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>

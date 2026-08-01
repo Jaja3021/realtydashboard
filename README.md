@@ -5,38 +5,34 @@ properties, and a monthly top-sales leaderboard by agent.
 
 ## Stack
 
-PHP + MySQL. No frameworks, no build step.
+- **Frontend:** plain HTML/CSS/JS, served as static files from `public/`
+- **Backend:** Next.js API routes (`app/api/**`)
+- **Database:** Supabase (Postgres)
 
-## Local setup (XAMPP)
+## Local setup
 
-1. Copy this folder into `htdocs/` (or run PHP's built-in server from the
-   project root instead — see note below).
-2. Import the schema: `mysql -u root < db.sql` (or import `db.sql` via
-   phpMyAdmin). This creates the `realty_dashboard` database and seeds a few
-   sample rows.
-3. `config/db.php` defaults to `root` with no password on `localhost`,
-   matching XAMPP's defaults — no changes needed for local use.
-4. Visit the site through Apache, or for a setup that matches production
-   exactly, run from the project root:
-   ```
-   php -S localhost:8000
-   ```
-   (All internal links are root-relative, so serving from a subfolder like
-   `htdocs/realtydashboard/` under Apache will break CSS/nav — use a vhost
-   pointed at this folder, or the built-in server above, instead.)
+1. `npm install`
+2. Create a Supabase project at [supabase.com](https://supabase.com), then run
+   [db.sql](db.sql) in its SQL Editor to create the `sales` table and seed
+   sample data.
+3. Copy `.env.local.example` to `.env.local` and fill in your Supabase
+   project's URL and **service_role** key (Project Settings → API).
+   The service_role key is only ever used server-side in `app/api/**` route
+   handlers — never expose it to the browser.
+4. `npm run dev` and open `http://localhost:3000`.
 
-## Deploying to Railway
+## Pages
 
-Railway runs PHP + MySQL directly, so no code changes are needed.
+- `/` — dashboard (revenue trend, property-type breakdown, recent sales)
+- `/add-sale` — form to log a sold property
+- `/sales` — full sales list with search (buyer/property/agent) and type filter
+- `/top-sales` — monthly agent leaderboard
+
+## Deploying to Vercel
 
 1. Push this repo to GitHub (already done if you're reading this from the repo).
-2. On [railway.app](https://railway.app), create a new project → **Deploy from GitHub repo** → select this repo.
-3. Add a **MySQL** plugin to the project (`+ New` → `Database` → `MySQL`).
-   Railway automatically injects `MYSQLHOST`, `MYSQLPORT`, `MYSQLDATABASE`,
-   `MYSQLUSER`, `MYSQLPASSWORD` into your app's environment — `config/db.php`
-   already reads these, falling back to local XAMPP defaults when absent.
-4. Import the schema into the Railway MySQL database: open its **Data** tab
-   (or connect via the provided connection string with a MySQL client) and
-   run the contents of `db.sql`.
-5. Once deployed, Railway gives you a public URL — the app serves from the
-   domain root, matching the root-relative links already in the code.
+2. On [vercel.com](https://vercel.com), **Add New Project** → import this repo.
+3. In the project's **Settings → Environment Variables**, add `SUPABASE_URL`
+   and `SUPABASE_SERVICE_ROLE_KEY` (same values as `.env.local`).
+4. Deploy — Vercel builds the Next.js API routes as serverless functions and
+   serves everything in `public/` as static assets automatically.

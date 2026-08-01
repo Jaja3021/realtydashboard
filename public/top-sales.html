@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Sales · Realty Dashboard</title>
+<link rel="stylesheet" href="/css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="layout">
+<script src="/js/sidebar.js"></script>
+<main class="main">
+
+<div class="page-header">
+  <div>
+    <h1>Top Sales</h1>
+    <p>Sales agent leaderboard for the selected month.</p>
+  </div>
+</div>
+
+<form id="monthForm" class="filter-row">
+  <select name="month" id="monthSelect"></select>
+  <span id="countBadge" class="badge"></span>
+</form>
+
+<div class="chart-grid" style="grid-template-columns: 1fr 1.1fr;">
+  <div class="card">
+    <h2>Revenue by agent <span id="monthLabel" class="muted"></span></h2>
+    <div class="chart-wrap" id="chartWrap"><canvas id="agentChart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Leaderboard</h2>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Agent</th><th class="num">Units</th><th class="num">Revenue</th></tr>
+      </thead>
+      <tbody id="leaderboardBody">
+        <tr><td colspan="4" class="loading">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script src="/js/utils.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const requestedMonth = params.get('month') || '';
+const monthSelect = document.getElementById('monthSelect');
+
+monthSelect.addEventListener('change', () => document.getElementById('monthForm').submit());
+
+function monthLabel(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+(async function () {
+  let data;
+  try {
+    const qs = requestedMonth ? '?month=' + encodeURIComponent(requestedMonth) : '';
+    data = await api('/api/top-sales' + qs);
+  } catch (e) {
+    document.getElementById('leaderboardBody').innerHTML = `<tr><td colspan="4" class="alert alert-error" style="border:none;">Failed to load: ${escapeHtml(e.message)}</td></tr>`;
+    return;
+  }
+
+  const { months, selectedMonth, leaderboard, monthTotal } = data;
+
+  if (!months.length) {
+    const opt = document.createElement('option');
+    opt.value = selectedMonth;
+    opt.textContent = monthLabel(selectedMonth);
+    monthSelect.appendChild(opt);
+  } else {
+    months.forEach((ym) => {
+      const opt = document.createElement('option');
+      opt.value = ym;
+      opt.textContent = monthLabel(ym);
+      if (ym === selectedMonth) opt.selected = true;
+      monthSelect.appendChild(opt);
+    });
+  }
+
+  document.getElementById('countBadge').textContent = `${leaderboard.length} agent${leaderboard.length === 1 ? '' : 's'} · ${peso(monthTotal)} total`;
+  document.getElementById('monthLabel').textContent = '· ' + monthLabel(selectedMonth);
+  document.getElementById('chartWrap').style.height = Math.max(180, leaderboard.length * 44) + 'px';
+
+  const leaderboardBody = document.getElementById('leaderboardBody');
+  if (!leaderboard.length) {
+    leaderboardBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted)">No sales recorded for this month.</td></tr>`;
+  } else {
+    leaderboardBody.innerHTML = leaderboard.map((row, i) => `
+      <tr>
+        <td><span class="rank ${i === 0 ? 'rank-1' : ''}">${i + 1}</span></td>
+        <td>${escapeHtml(row.agent_name)}</td>
+        <td class="num">${row.units}</td>
+        <td class="num">${peso(row.revenue)}</td>
+      </tr>
+    `).join('');
+  }
+
+  const css = getComputedStyle(document.documentElement);
+  const seriesColor = css.getPropertyValue('--series-1').trim();
+  const gridColor = css.getPropertyValue('--gridline').trim();
+  const textSecondary = css.getPropertyValue('--text-secondary').trim();
+
+  Chart.defaults.font.family = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = textSecondary;
+
+  new Chart(document.getElementById('agentChart'), {
+    type: 'bar',
+    data: {
+      labels: leaderboard.map((r) => r.agent_name),
+      datasets: [{ label: 'Revenue', data: leaderboard.map((r) => r.revenue), backgroundColor: seriesColor, borderRadius: 4, maxBarThickness: 26 }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' ₱' + ctx.parsed.x.toLocaleString() } } },
+      scales: {
+        x: { grid: { color: gridColor }, border: { display: false }, ticks: { callback: (v) => '₱' + (v >= 1000000 ? (v / 1000000) + 'M' : v >= 1000 ? (v / 1000) + 'k' : v) } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>All Sales · Realty Dashboard</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout">
+<script src="/js/sidebar.js"></script>
+<main class="main">
+
+<div class="page-header">
+  <div>
+    <h1>All Sales</h1>
+    <p>Every sold property on record.</p>
+  </div>
+  <a href="/add-sale" class="btn btn-primary">+ Add Sold Property</a>
+</div>
+
+<form id="filterForm" class="filter-row" autocomplete="off">
+  <div class="search-wrap">
+    <input type="search" name="q" id="searchInput" class="search-input" placeholder="Search buyer, property, or agent…">
+    <div id="searchSuggestions" class="search-suggestions"></div>
+  </div>
+  <select name="type" id="typeSelect">
+    <option value="">All property types</option>
+  </select>
+  <button type="submit" class="btn btn-ghost">Search</button>
+  <a href="/sales" id="clearLink" class="btn btn-ghost" style="display:none;">Clear</a>
+  <span id="countBadge" class="badge"></span>
+</form>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Property</th><th>Type</th><th>Buyer</th><th>Agent</th><th>Date Sold</th><th class="num">Price</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="salesBody">
+      <tr><td colspan="7" class="loading">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</main>
+</div>
+
+<script src="/js/utils.js"></script>
+<script>
+const typeSelect = document.getElementById('typeSelect');
+PROPERTY_TYPES.forEach((t) => {
+  const opt = document.createElement('option');
+  opt.value = t;
+  opt.textContent = t;
+  typeSelect.appendChild(opt);
+});
+
+const params = new URLSearchParams(window.location.search);
+const search = params.get('q') || '';
+const typeFilter = params.get('type') || '';
+
+document.getElementById('searchInput').value = search;
+typeSelect.value = typeFilter;
+if (search || typeFilter) document.getElementById('clearLink').style.display = '';
+
+typeSelect.addEventListener('change', () => document.getElementById('filterForm').submit());
+
+async function loadSales() {
+  const salesBody = document.getElementById('salesBody');
+  let data;
+  try {
+    const qs = new URLSearchParams();
+    if (typeFilter) qs.set('type', typeFilter);
+    if (search) qs.set('q', search);
+    data = await api('/api/sales?' + qs.toString());
+  } catch (e) {
+    salesBody.innerHTML = `<tr><td colspan="7" class="alert alert-error" style="border:none;">Failed to load sales: ${escapeHtml(e.message)}</td></tr>`;
+    return;
+  }
+
+  const { sales, suggestions } = data;
+  document.getElementById('countBadge').textContent = `${sales.length} record${sales.length === 1 ? '' : 's'}`;
+
+  if (!sales.length) {
+    salesBody.innerHTML = `<tr><td colspan="7" style="color:var(--text-muted)">No sales found.</td></tr>`;
+  } else {
+    salesBody.innerHTML = sales.map((s) => `
+      <tr>
+        <td>
+          ${escapeHtml(s.property_name)}
+          ${s.location ? `<div style="color:var(--text-muted);font-size:12px;">${escapeHtml(s.location)}</div>` : ''}
+        </td>
+        <td><span class="badge">${escapeHtml(s.property_type)}</span></td>
+        <td>
+          ${escapeHtml(s.buyer_name)}
+          ${s.buyer_contact ? `<div style="color:var(--text-muted);font-size:12px;">${escapeHtml(s.buyer_contact)}</div>` : ''}
+        </td>
+        <td>${escapeHtml(s.agent_name)}</td>
+        <td>${formatDate(s.date_sold)}</td>
+        <td class="num">${peso(s.price)}</td>
+        <td><button type="button" class="btn btn-danger" data-delete-id="${s.id}">Delete</button></td>
+      </tr>
+    `).join('');
+  }
+
+  salesBody.querySelectorAll('[data-delete-id]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this sale record?')) return;
+      try {
+        await api(`/api/sales/${btn.dataset.deleteId}`, { method: 'DELETE' });
+        loadSales();
+      } catch (e) {
+        alert('Failed to delete: ' + e.message);
+      }
+    });
+  });
+
+  setupSuggestions(suggestions);
+}
+
+function setupSuggestions(suggestData) {
+  const searchInput = document.getElementById('searchInput');
+  const suggestBox = document.getElementById('searchSuggestions');
+  const filterForm = document.getElementById('filterForm');
+
+  function render(term) {
+    const q = term.trim().toLowerCase();
+    if (!q) { suggestBox.classList.remove('open'); suggestBox.innerHTML = ''; return; }
+
+    const seen = new Set();
+    const matches = [];
+    for (const row of suggestData) {
+      const hitProperty = row.property_name.toLowerCase().includes(q);
+      const hitBuyer = row.buyer_name.toLowerCase().includes(q);
+      const hitAgent = row.agent_name.toLowerCase().includes(q);
+      if (!hitProperty && !hitBuyer && !hitAgent) continue;
+
+      const key = row.property_name + '|' + row.buyer_name + '|' + row.agent_name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      matches.push({
+        value: hitProperty ? row.property_name : (hitBuyer ? row.buyer_name : row.agent_name),
+        property: row.property_name,
+        buyer: row.buyer_name,
+        agent: row.agent_name,
+      });
+      if (matches.length >= 8) break;
+    }
+
+    if (!matches.length) {
+      suggestBox.innerHTML = '<div class="search-suggestions__empty">No matches</div>';
+      suggestBox.classList.add('open');
+      return;
+    }
+
+    suggestBox.innerHTML = matches.map((m) => `
+      <button type="button" class="search-suggestions__item" data-value="${escapeHtml(m.value)}">
+        <span class="search-suggestions__title">${escapeHtml(m.property)}</span>
+        <span class="search-suggestions__meta">${escapeHtml(m.buyer)} &middot; ${escapeHtml(m.agent)}</span>
+      </button>
+    `).join('');
+    suggestBox.classList.add('open');
+  }
+
+  searchInput.addEventListener('input', () => render(searchInput.value));
+  searchInput.addEventListener('focus', () => render(searchInput.value));
+
+  suggestBox.addEventListener('click', (e) => {
+    const item = e.target.closest('.search-suggestions__item');
+    if (!item) return;
+    searchInput.value = item.dataset.value;
+    suggestBox.classList.remove('open');
+    filterForm.submit();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrap')) suggestBox.classList.remove('open');
+  });
+}
+
+loadSales();
+</script>
+</body>
+</html>

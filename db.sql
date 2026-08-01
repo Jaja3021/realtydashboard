@@ -1,21 +1,23 @@
--- Realty Dashboard schema
--- Import this file via phpMyAdmin, or run: mysql -u root -p < db.sql
-
-CREATE DATABASE IF NOT EXISTS realty_dashboard;
-USE realty_dashboard;
+-- Realty Dashboard schema (Postgres / Supabase)
+-- Run this in the Supabase SQL Editor (Project → SQL Editor → New query).
 
 CREATE TABLE IF NOT EXISTS sales (
-    id             INT AUTO_INCREMENT PRIMARY KEY,
-    property_name  VARCHAR(150) NOT NULL,
-    property_type  VARCHAR(50)  NOT NULL,
-    location       VARCHAR(150) NULL,
-    buyer_name     VARCHAR(120) NOT NULL,
-    buyer_contact  VARCHAR(60)  NULL,
-    price          DECIMAL(15,2) NOT NULL,
-    agent_name     VARCHAR(100) NOT NULL,
+    id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    property_name  TEXT NOT NULL,
+    property_type  TEXT NOT NULL,
+    location       TEXT,
+    buyer_name     TEXT NOT NULL,
+    buyer_contact  TEXT,
+    price          NUMERIC(15,2) NOT NULL,
+    agent_name     TEXT NOT NULL,
     date_sold      DATE NOT NULL,
-    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- RLS is on by default for new Supabase tables with no policies, which blocks
+-- all access. That's fine here: the app only ever talks to this table through
+-- the Next.js API routes using the service_role key, which bypasses RLS.
+ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
 
 -- Sample data so the dashboard has something to show on first load.
 -- Feel free to delete these rows from the Sales list once you add real ones.

@@ -321,6 +321,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   border: 1px solid var(--border);
 }
 .alert-success { color: var(--success-text); background: color-mix(in srgb, var(--status-good) 10%, transparent); }
+.alert-error { color: var(--status-critical); background: color-mix(in srgb, var(--status-critical) 8%, transparent); }
 
 /* ---------- Filter row ---------- */
 .filter-row {
@@ -426,4 +427,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   background: var(--page-plane);
   color: var(--text-secondary);
   border: 1px solid var(--border);
+}
+
+.loading {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 12px;
 }
