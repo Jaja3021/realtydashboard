@@ -32,15 +32,21 @@
   <span id="countBadge" class="badge"></span>
 </form>
 
+<form id="exportRow" class="filter-row" style="margin-top:-8px;">
+  <label for="exportMonth" style="font-size:14px;color:var(--text-secondary);">Export month:</label>
+  <input type="month" id="exportMonth" name="exportMonth">
+  <button type="button" id="exportBtn" class="btn btn-ghost">Export to Excel</button>
+</form>
+
 <div class="card">
   <table>
     <thead>
       <tr>
-        <th>Property</th><th>Type</th><th>Buyer</th><th>Agent</th><th>Date Sold</th><th class="num">Price</th><th></th>
+        <th>Family Name</th><th>First Name</th><th>Property</th><th>Phase</th><th>Blk</th><th>Lot</th><th>Date Sold</th><th class="num">Price</th><th>Agent</th><th>Assisting</th><th></th>
       </tr>
     </thead>
     <tbody id="salesBody">
-      <tr><td colspan="7" class="loading">Loading…</td></tr>
+      <tr><td colspan="11" class="loading">Loading…</td></tr>
     </tbody>
   </table>
 </div>
@@ -48,14 +54,90 @@
 </main>
 </div>
 
+<div id="editOverlay" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="modal__header">
+      <h2>Edit Sale</h2>
+      <button type="button" id="editClose" class="modal__close" aria-label="Close">&times;</button>
+    </div>
+    <div id="editAlertBox"></div>
+    <form id="editForm" class="form-grid" novalidate>
+      <input type="hidden" id="edit_id" name="id">
+      <div class="field">
+        <label for="edit_buyer_family_name">Buyer's Family Name</label>
+        <input type="text" id="edit_buyer_family_name" name="buyer_family_name" required>
+      </div>
+      <div class="field">
+        <label for="edit_buyer_first_name">Buyer's First Name</label>
+        <input type="text" id="edit_buyer_first_name" name="buyer_first_name" required>
+      </div>
+      <div class="field">
+        <label for="edit_buyer_contact">Buyer Contact</label>
+        <input type="text" id="edit_buyer_contact" name="buyer_contact">
+      </div>
+      <div class="field">
+        <label for="edit_property_name">Property Name / Unit</label>
+        <input type="text" id="edit_property_name" name="property_name" required>
+      </div>
+      <div class="field">
+        <label for="edit_property_type">Property Type</label>
+        <select id="edit_property_type" name="property_type" required></select>
+      </div>
+      <div class="field">
+        <label for="edit_location">Location</label>
+        <input type="text" id="edit_location" name="location">
+      </div>
+      <div class="field">
+        <label for="edit_phase">Phase <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+        <input type="text" id="edit_phase" name="phase">
+      </div>
+      <div class="field">
+        <label for="edit_block">Block</label>
+        <input type="text" id="edit_block" name="block" required>
+      </div>
+      <div class="field">
+        <label for="edit_lot">Lot</label>
+        <input type="text" id="edit_lot" name="lot" required>
+      </div>
+      <div class="field">
+        <label for="edit_price">Selling Price (₱)</label>
+        <input type="number" id="edit_price" name="price" min="0" step="0.01" required>
+      </div>
+      <div class="field">
+        <label for="edit_agent_name">Sales Agent</label>
+        <input type="text" id="edit_agent_name" name="agent_name" required>
+      </div>
+      <div class="field">
+        <label for="edit_assisting_name">Assisting Name <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+        <input type="text" id="edit_assisting_name" name="assisting_name">
+      </div>
+      <div class="field">
+        <label for="edit_date_sold">Date Sold</label>
+        <input type="date" id="edit_date_sold" name="date_sold" required>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <button type="button" id="editCancel" class="btn btn-ghost">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/vendor/xlsx.full.min.js"></script>
 <script src="/js/utils.js"></script>
 <script>
 const typeSelect = document.getElementById('typeSelect');
+const editTypeSelect = document.getElementById('edit_property_type');
 PROPERTY_TYPES.forEach((t) => {
   const opt = document.createElement('option');
   opt.value = t;
   opt.textContent = t;
   typeSelect.appendChild(opt);
+
+  const editOpt = document.createElement('option');
+  editOpt.value = t;
+  editOpt.textContent = t;
+  editTypeSelect.appendChild(editOpt);
 });
 
 const params = new URLSearchParams(window.location.search);
@@ -68,6 +150,10 @@ if (search || typeFilter) document.getElementById('clearLink').style.display = '
 
 typeSelect.addEventListener('change', () => document.getElementById('filterForm').submit());
 
+document.getElementById('exportMonth').value = new Date().toISOString().slice(0, 7);
+
+let currentSales = [];
+
 async function loadSales() {
   const salesBody = document.getElementById('salesBody');
   let data;
@@ -77,31 +163,39 @@ async function loadSales() {
     if (search) qs.set('q', search);
     data = await api('/api/sales?' + qs.toString());
   } catch (e) {
-    salesBody.innerHTML = `<tr><td colspan="7" class="alert alert-error" style="border:none;">Failed to load sales: ${escapeHtml(e.message)}</td></tr>`;
+    salesBody.innerHTML = `<tr><td colspan="11" class="alert alert-error" style="border:none;">Failed to load sales: ${escapeHtml(e.message)}</td></tr>`;
     return;
   }
 
   const { sales, suggestions } = data;
+  currentSales = sales;
   document.getElementById('countBadge').textContent = `${sales.length} record${sales.length === 1 ? '' : 's'}`;
 
   if (!sales.length) {
-    salesBody.innerHTML = `<tr><td colspan="7" style="color:var(--text-muted)">No sales found.</td></tr>`;
+    salesBody.innerHTML = `<tr><td colspan="11" style="color:var(--text-muted)">No sales found.</td></tr>`;
   } else {
     salesBody.innerHTML = sales.map((s) => `
       <tr>
+        <td>${escapeHtml(s.buyer_family_name)}</td>
+        <td>${escapeHtml(s.buyer_first_name)}</td>
         <td>
           ${escapeHtml(s.property_name)}
-          ${s.location ? `<div style="color:var(--text-muted);font-size:12px;">${escapeHtml(s.location)}</div>` : ''}
+          <div style="color:var(--text-muted);font-size:12px;">
+            <span class="badge">${escapeHtml(s.property_type)}</span>
+            ${s.location ? ' · ' + escapeHtml(s.location) : ''}
+          </div>
         </td>
-        <td><span class="badge">${escapeHtml(s.property_type)}</span></td>
-        <td>
-          ${escapeHtml(s.buyer_name)}
-          ${s.buyer_contact ? `<div style="color:var(--text-muted);font-size:12px;">${escapeHtml(s.buyer_contact)}</div>` : ''}
-        </td>
-        <td>${escapeHtml(s.agent_name)}</td>
+        <td>${escapeHtml(s.phase || '—')}</td>
+        <td>${escapeHtml(s.block)}</td>
+        <td>${escapeHtml(s.lot)}</td>
         <td>${formatDate(s.date_sold)}</td>
         <td class="num">${peso(s.price)}</td>
-        <td><button type="button" class="btn btn-danger" data-delete-id="${s.id}">Delete</button></td>
+        <td>${escapeHtml(s.agent_name)}</td>
+        <td>${escapeHtml(s.assisting_name || '—')}</td>
+        <td style="white-space:nowrap;">
+          <button type="button" class="btn btn-ghost" data-edit-id="${s.id}">Edit</button>
+          <button type="button" class="btn btn-danger" data-delete-id="${s.id}">Delete</button>
+        </td>
       </tr>
     `).join('');
   }
@@ -115,6 +209,13 @@ async function loadSales() {
       } catch (e) {
         alert('Failed to delete: ' + e.message);
       }
+    });
+  });
+
+  salesBody.querySelectorAll('[data-edit-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const sale = currentSales.find((s) => String(s.id) === btn.dataset.editId);
+      if (sale) openEditModal(sale);
     });
   });
 
@@ -133,19 +234,21 @@ function setupSuggestions(suggestData) {
     const seen = new Set();
     const matches = [];
     for (const row of suggestData) {
+      const buyerName = `${row.buyer_first_name} ${row.buyer_family_name}`;
       const hitProperty = row.property_name.toLowerCase().includes(q);
-      const hitBuyer = row.buyer_name.toLowerCase().includes(q);
+      const hitBuyer = buyerName.toLowerCase().includes(q);
       const hitAgent = row.agent_name.toLowerCase().includes(q);
-      if (!hitProperty && !hitBuyer && !hitAgent) continue;
+      const hitAssisting = (row.assisting_name || '').toLowerCase().includes(q);
+      if (!hitProperty && !hitBuyer && !hitAgent && !hitAssisting) continue;
 
-      const key = row.property_name + '|' + row.buyer_name + '|' + row.agent_name;
+      const key = row.property_name + '|' + buyerName + '|' + row.agent_name;
       if (seen.has(key)) continue;
       seen.add(key);
 
       matches.push({
-        value: hitProperty ? row.property_name : (hitBuyer ? row.buyer_name : row.agent_name),
+        value: hitProperty ? row.property_name : (hitBuyer ? buyerName : (hitAgent ? row.agent_name : row.assisting_name)),
         property: row.property_name,
-        buyer: row.buyer_name,
+        buyer: buyerName,
         agent: row.agent_name,
       });
       if (matches.length >= 8) break;
@@ -181,6 +284,117 @@ function setupSuggestions(suggestData) {
     if (!e.target.closest('.search-wrap')) suggestBox.classList.remove('open');
   });
 }
+
+// ---------- Edit modal ----------
+const editOverlay = document.getElementById('editOverlay');
+const editForm = document.getElementById('editForm');
+const editAlertBox = document.getElementById('editAlertBox');
+
+function openEditModal(sale) {
+  editAlertBox.innerHTML = '';
+  editForm.id.value = sale.id;
+  editForm.property_name.value = sale.property_name;
+  editForm.property_type.value = sale.property_type;
+  editForm.location.value = sale.location || '';
+  editForm.phase.value = sale.phase || '';
+  editForm.block.value = sale.block;
+  editForm.lot.value = sale.lot;
+  editForm.price.value = sale.price;
+  editForm.buyer_family_name.value = sale.buyer_family_name;
+  editForm.buyer_first_name.value = sale.buyer_first_name;
+  editForm.buyer_contact.value = sale.buyer_contact || '';
+  editForm.agent_name.value = sale.agent_name;
+  editForm.assisting_name.value = sale.assisting_name || '';
+  editForm.date_sold.value = sale.date_sold;
+  editOverlay.style.display = 'flex';
+}
+
+function closeEditModal() {
+  editOverlay.style.display = 'none';
+}
+
+document.getElementById('editClose').addEventListener('click', closeEditModal);
+document.getElementById('editCancel').addEventListener('click', closeEditModal);
+editOverlay.addEventListener('click', (e) => {
+  if (e.target === editOverlay) closeEditModal();
+});
+
+editForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  editAlertBox.innerHTML = '';
+
+  const payload = {
+    property_name: editForm.property_name.value,
+    property_type: editForm.property_type.value,
+    location: editForm.location.value,
+    phase: editForm.phase.value,
+    block: editForm.block.value,
+    lot: editForm.lot.value,
+    buyer_family_name: editForm.buyer_family_name.value,
+    buyer_first_name: editForm.buyer_first_name.value,
+    buyer_contact: editForm.buyer_contact.value,
+    price: parseFloat(editForm.price.value),
+    agent_name: editForm.agent_name.value,
+    assisting_name: editForm.assisting_name.value,
+    date_sold: editForm.date_sold.value,
+  };
+
+  try {
+    await api(`/api/sales/${editForm.id.value}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    closeEditModal();
+    loadSales();
+  } catch (err) {
+    const messages = (err.data && err.data.errors) || [err.message];
+    editAlertBox.innerHTML = `<div class="alert alert-error">${messages.map(escapeHtml).join('<br>')}</div>`;
+  }
+});
+
+// ---------- Export to Excel ----------
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  const month = document.getElementById('exportMonth').value;
+  if (!month) { alert('Pick a month to export.'); return; }
+
+  const exportBtn = document.getElementById('exportBtn');
+  exportBtn.disabled = true;
+  exportBtn.textContent = 'Exporting…';
+  try {
+    const { sales } = await api(`/api/sales?month=${month}`);
+    if (!sales.length) {
+      alert(`No sales found for ${month}.`);
+      return;
+    }
+
+    const rows = sales.map((s) => ({
+      'Family Name': s.buyer_family_name,
+      'First Name': s.buyer_first_name,
+      'Property': s.property_name,
+      'Type': s.property_type,
+      'Location': s.location || '',
+      'Phase': s.phase || '',
+      'Blk': s.block,
+      'Lot': s.lot,
+      'Date Sold': s.date_sold,
+      'Price': Number(s.price),
+      'Agent': s.agent_name,
+      'Assisting Name': s.assisting_name || '',
+      'Buyer Contact': s.buyer_contact || '',
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sales');
+    XLSX.writeFile(workbook, `sales-${month}.xlsx`);
+  } catch (e) {
+    alert('Failed to export: ' + e.message);
+  } finally {
+    exportBtn.disabled = false;
+    exportBtn.textContent = 'Export to Excel';
+  }
+});
 
 loadSales();
 </script>
