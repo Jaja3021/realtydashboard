@@ -26,6 +26,7 @@ export async function GET() {
     units: sales.length,
     revenue: sales.reduce((sum, s) => sum + Number(s.price), 0),
   };
+  allStat.avgPrice = allStat.units ? allStat.revenue / allStat.units : 0;
 
   const agentTotals = new Map();
   for (const s of thisMonthSales) {
@@ -55,10 +56,11 @@ export async function GET() {
     typeTotals.set(s.property_type, cur);
   }
   const typeBreakdown = [...typeTotals.values()].sort((a, b) => b.revenue - a.revenue);
+  const bestType = [...typeTotals.values()].sort((a, b) => b.units - a.units)[0] || null;
 
   const recent = [...sales]
     .sort((a, b) => (b.date_sold < a.date_sold ? -1 : b.date_sold > a.date_sold ? 1 : b.id - a.id))
     .slice(0, 6);
 
-  return NextResponse.json({ monthStat, allStat, topAgent, trend, typeBreakdown, recent });
+  return NextResponse.json({ monthStat, allStat, topAgent, bestType, trend, typeBreakdown, recent });
 }

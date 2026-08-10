@@ -41,3 +41,15 @@ INSERT INTO sales (property_name, property_type, location, phase, block, lot, bu
 ('Sunrise Villas',            'House and Lot', 'Cavite',      'Phase 1', '1',  '5',  'Chua',     'Ferdinand', '0922-666-7777', 4300000.00, 'Jenny Cruz',     NULL,          '2026-07-25'),
 ('Commercial Space',          'Commercial',    'Pasig',       NULL,      'G',  '2',  'Robles',   'Liza',      '0923-777-8888', 8900000.00, 'Rico Tan',       NULL,          '2026-06-10'),
 ('Greenfield Residences #210','Condominium',   'Quezon City', NULL,      'N/A','210','Aquino',   'Noel',      '0924-888-9999', 3100000.00, 'Mark Villanueva',NULL,          '2026-06-18');
+
+-- Sidebar calendar: meetings, site trippings, and duty/manning schedules.
+CREATE TABLE IF NOT EXISTS events (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    event_date  DATE NOT NULL,
+    event_type  TEXT NOT NULL CHECK (event_type IN ('meeting', 'tripping', 'manning', 'pks')),
+    title       TEXT NOT NULL,
+    notes       TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;

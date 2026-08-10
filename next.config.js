@@ -6,6 +6,7 @@ const nextConfig = {
       { source: '/add-sale', destination: '/add-sale.html' },
       { source: '/sales', destination: '/sales.html' },
       { source: '/top-sales', destination: '/top-sales.html' },
+      { source: '/calendar', destination: '/calendar.html' },
     ];
   },
 };

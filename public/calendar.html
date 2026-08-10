@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendar · Realty Dashboard</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout">
+<script src="/js/sidebar.js"></script>
+<main class="main">
+
+<div class="page-header">
+  <div>
+    <h1>Calendar</h1>
+    <p>Meetings, site trippings, manning schedules, and more.</p>
+  </div>
+  <div id="calLegend" class="cal__legend"></div>
+</div>
+
+<div class="card">
+  <div class="cal__head">
+    <button type="button" id="calPrev" class="cal__nav" aria-label="Previous month">&lsaquo;</button>
+    <span id="calLabel" class="cal__label"></span>
+    <button type="button" id="calNext" class="cal__nav" aria-label="Next month">&rsaquo;</button>
+  </div>
+  <div class="cal__dow"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+  <div id="calGrid" class="cal__grid"></div>
+</div>
+
+</main>
+</div>
+
+<div id="eventOverlay" class="modal-overlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal__header">
+      <h2 id="eventModalTitle">Events</h2>
+      <button type="button" id="eventClose" class="modal__close" aria-label="Close">&times;</button>
+    </div>
+    <div id="eventList" class="event-list"></div>
+    <div id="eventAlertBox"></div>
+    <form id="eventForm" novalidate>
+      <input type="hidden" id="event_date" name="event_date">
+      <div class="field">
+        <label for="event_title">Title</label>
+        <input type="text" id="event_title" name="title" required placeholder="e.g. Site visit with client">
+      </div>
+      <div class="field" style="margin-top:10px;">
+        <label for="event_type">Type</label>
+        <select id="event_type" name="event_type" required></select>
+      </div>
+      <div class="field" style="margin-top:10px;">
+        <label for="event_notes">Notes <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+        <input type="text" id="event_notes" name="notes">
+      </div>
+      <div class="form-actions" style="margin-top:14px;">
+        <button type="submit" class="btn btn-primary">Add Event</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/utils.js"></script>
+<script>
+(function () {
+  const typeSelect = document.getElementById('event_type');
+  EVENT_TYPES.forEach((t) => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = EVENT_TYPE_LABELS[t] || t;
+    typeSelect.appendChild(opt);
+  });
+
+  document.getElementById('calLegend').innerHTML = EVENT_TYPES.map((t) => `
+    <span><i class="cal__dot cal__dot--${t}"></i>${escapeHtml(EVENT_TYPE_LABELS[t] || t)}</span>
+  `).join('');
+
+  const today = new Date();
+  const todayKey = ymd(today.getFullYear(), today.getMonth(), today.getDate());
+  let viewDate = new Date(today.getFullYear(), today.getMonth(), 1);
+  let eventsByDate = {};
+  let selectedKey = null;
+
+  const calLabel = document.getElementById('calLabel');
+  const calGrid = document.getElementById('calGrid');
+  const eventOverlay = document.getElementById('eventOverlay');
+  const eventModalTitle = document.getElementById('eventModalTitle');
+  const eventList = document.getElementById('eventList');
+  const eventAlertBox = document.getElementById('eventAlertBox');
+  const eventForm = document.getElementById('eventForm');
+
+  function ymd(y, m, d) {
+    return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  async function loadMonth() {
+    calLabel.textContent = viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const monthKey = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
+    calGrid.innerHTML = '<div class="cal__loading">Loading…</div>';
+    try {
+      const { events } = await api('/api/events?month=' + monthKey);
+      eventsByDate = {};
+      for (const ev of events) {
+        (eventsByDate[ev.event_date] = eventsByDate[ev.event_date] || []).push(ev);
+      }
+    } catch (e) {
+      calGrid.innerHTML = `<div class="cal__loading alert alert-error" style="grid-column:1 / -1;">Failed to load events: ${escapeHtml(e.message)}</div>`;
+      return;
+    }
+    renderGrid();
+  }
+
+  function renderGrid() {
+    const y = viewDate.getFullYear();
+    const m = viewDate.getMonth();
+    const firstDow = new Date(y, m, 1).getDay();
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+
+    let cells = '';
+    for (let i = 0; i < firstDow; i++) cells += '<div class="cal__cell cal__cell--empty"></div>';
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = ymd(y, m, d);
+      const dayEvents = eventsByDate[key] || [];
+      const visible = dayEvents.slice(0, 3);
+      const extra = dayEvents.length - visible.length;
+      const chips = visible.map((ev) => `<span class="cal__chip cal__chip--${ev.event_type}">${escapeHtml(ev.title)}</span>`).join('');
+      const more = extra > 0 ? `<span class="cal__more">+${extra} more</span>` : '';
+      const isToday = key === todayKey;
+      cells += `
+        <button type="button" class="cal__cell${isToday ? ' cal__cell--today' : ''}" data-date="${key}">
+          <span class="cal__daynum">${d}</span>
+          <span class="cal__chips">${chips}${more}</span>
+        </button>`;
+    }
+    calGrid.innerHTML = cells;
+
+    calGrid.querySelectorAll('[data-date]').forEach((btn) => {
+      btn.addEventListener('click', () => openDay(btn.dataset.date));
+    });
+  }
+
+  function openDay(key) {
+    selectedKey = key;
+    const d = new Date(key + 'T00:00:00');
+    eventModalTitle.textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    eventForm.reset();
+    eventForm.event_date.value = key;
+    eventAlertBox.innerHTML = '';
+    renderEventList();
+    eventOverlay.style.display = 'flex';
+  }
+
+  function renderEventList() {
+    const dayEvents = eventsByDate[selectedKey] || [];
+    if (!dayEvents.length) {
+      eventList.innerHTML = '<p class="event-list__empty">No events yet for this day.</p>';
+      return;
+    }
+    eventList.innerHTML = dayEvents.map((ev) => `
+      <div class="event-list__item">
+        <i class="cal__dot cal__dot--${ev.event_type}"></i>
+        <div class="event-list__body">
+          <div class="event-list__title">${escapeHtml(ev.title)}</div>
+          <div class="event-list__meta">${escapeHtml(EVENT_TYPE_LABELS[ev.event_type] || ev.event_type)}${ev.notes ? ' · ' + escapeHtml(ev.notes) : ''}</div>
+        </div>
+        <button type="button" class="btn btn-danger" data-delete-event="${ev.id}">Delete</button>
+      </div>
+    `).join('');
+
+    eventList.querySelectorAll('[data-delete-event]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this event?')) return;
+        try {
+          await api(`/api/events/${btn.dataset.deleteEvent}`, { method: 'DELETE' });
+          eventsByDate[selectedKey] = (eventsByDate[selectedKey] || []).filter((ev) => String(ev.id) !== btn.dataset.deleteEvent);
+          renderEventList();
+          renderGrid();
+        } catch (e) {
+          alert('Failed to delete: ' + e.message);
+        }
+      });
+    });
+  }
+
+  function closeDay() {
+    eventOverlay.style.display = 'none';
+  }
+
+  document.getElementById('eventClose').addEventListener('click', closeDay);
+  eventOverlay.addEventListener('click', (e) => { if (e.target === eventOverlay) closeDay(); });
+
+  eventForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    eventAlertBox.innerHTML = '';
+    const payload = {
+      event_date: eventForm.event_date.value,
+      event_type: eventForm.event_type.value,
+      title: eventForm.title.value,
+      notes: eventForm.notes.value,
+    };
+    try {
+      const { event } = await api('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      (eventsByDate[selectedKey] = eventsByDate[selectedKey] || []).push(event);
+      eventForm.reset();
+      eventForm.event_date.value = selectedKey;
+      renderEventList();
+      renderGrid();
+    } catch (err) {
+      const messages = (err.data && err.data.errors) || [err.message];
+      eventAlertBox.innerHTML = `<div class="alert alert-error">${messages.map(escapeHtml).join('<br>')}</div>`;
+    }
+  });
+
+  document.getElementById('calPrev').addEventListener('click', () => {
+    viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1);
+    loadMonth();
+  });
+  document.getElementById('calNext').addEventListener('click', () => {
+    viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1);
+    loadMonth();
+  });
+
+  loadMonth();
+})();
+</script>
+</body>
+</html>

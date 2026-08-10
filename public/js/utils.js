@@ -1,4 +1,6 @@
 const PROPERTY_TYPES = ['House and Lot', 'Condominium', 'Lot Only', 'Townhouse', 'Commercial'];
+const EVENT_TYPES = ['meeting', 'tripping', 'manning', 'pks'];
+const EVENT_TYPE_LABELS = { meeting: 'Meeting', tripping: 'Tripping', manning: 'Manning', pks: 'PKS' };
 
 function peso(n) {
   return '₱' + Math.round(Number(n) || 0).toLocaleString();

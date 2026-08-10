@@ -60,7 +60,7 @@
     return;
   }
 
-  const { monthStat, allStat, topAgent, trend, typeBreakdown, recent } = dashboard;
+  const { monthStat, allStat, topAgent, bestType, trend, typeBreakdown, recent } = dashboard;
   const monthLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   document.getElementById('statRow').innerHTML = `
@@ -83,6 +83,16 @@
       <div class="stat-tile__label">All-Time Units / Revenue</div>
       <div class="stat-tile__value">${allStat.units}</div>
       <div class="stat-tile__delta">${peso(allStat.revenue)}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile__label">Average Sale Price</div>
+      <div class="stat-tile__value">${peso(allStat.avgPrice)}</div>
+      <div class="stat-tile__delta">All-time average</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile__label">Best-Selling Property Type</div>
+      <div class="stat-tile__value" style="font-size:20px;">${bestType ? escapeHtml(bestType.property_type) : '—'}</div>
+      <div class="stat-tile__delta">${bestType ? bestType.units + ' units sold' : 'No sales yet'}</div>
     </div>
   `;
 
